@@ -407,9 +407,13 @@
     cursor: pointer;
   }
   .next-btn:hover { background: rgba(232,163,61,0.1); }
-  .result-actions { display: flex; justify-content: center; }
+  .bonus-btn { border-color: var(--accent-green); color: var(--accent-green); }
+  .bonus-btn:hover { background: rgba(82,196,121,0.1); }
+  .result-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
   .share-msg { font-size: 12px; color: var(--accent-green); min-height: 16px; margin-top: 8px; }
   .come-back { font-size: 12px; color: var(--text-muted); margin-top: 14px; font-style: italic; }
+  .bonus-badge { display: inline-block; background: var(--accent-green); color: #0a0a0a; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.5px; }
+  .bonus-counter { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 
 
   .disclaimer {
@@ -514,6 +518,7 @@
         <div class="result-explainer" id="resultExplainer"></div>
         <div class="result-actions">
           <button class="next-btn" id="shareBtn">Share result</button>
+          <button class="next-btn bonus-btn" id="bonusBtn">▶ Play another case</button>
         </div>
         <div class="share-msg" id="shareMsg"></div>
         <div class="come-back" id="comeBack">Come back tomorrow for a new case.</div>
@@ -593,6 +598,7 @@ const resultExtra = document.getElementById('resultExtra');
 const resultAnswer = document.getElementById('resultAnswer');
 const resultExplainer = document.getElementById('resultExplainer');
 const shareBtn = document.getElementById('shareBtn');
+const bonusBtn = document.getElementById('bonusBtn');
 const shareMsg = document.getElementById('shareMsg');
 const comeBack = document.getElementById('comeBack');
 
@@ -738,6 +744,7 @@ function progressKey(mode, day) {
 }
 
 function saveProgress() {
+  if (bonusMode) return; // don't save bonus rounds to daily progress
   const data = {
     status: state.status,
     guessesUsed: state.guessesUsed,
@@ -788,6 +795,8 @@ backLink.addEventListener('click', () => {
 
 /* ---------------- LOAD CASE ---------------- */
 async function loadCase() {
+  bonusMode = false;
+  bonusIndex = null;
   clueList.innerHTML = "";
   banner.className = "banner";
   resultExtra.classList.remove('show');
@@ -921,7 +930,9 @@ submitBtn.addEventListener('click', async () => {
 
   let result;
   try {
-    result = await apiGuess(ACTIVE_MODE, guessToSend, state.guessesUsed + 1);
+    result = bonusMode
+      ? await apiBonusGuess(ACTIVE_MODE, bonusIndex, guessToSend, state.guessesUsed + 1)
+      : await apiGuess(ACTIVE_MODE, guessToSend, state.guessesUsed + 1);
   } catch (e) {
     guessInput.disabled = false;
     submitBtn.disabled = false;
@@ -990,6 +1001,11 @@ function finishUI(won) {
   resultAnswer.textContent = won ? answer : `THE ROOT CAUSE WAS: ${answer.toUpperCase()}`;
   resultAnswer.style.color = won ? "var(--accent-green)" : "#FF8A85";
   resultExplainer.textContent = state.resultExplainer || "";
+
+  // Show/hide "Play another case" and "Come back tomorrow" based on context
+  bonusBtn.style.display = '';          // always show the bonus button
+  comeBack.style.display = bonusMode ? 'none' : ''; // hide "tomorrow" during bonus rounds
+
   resultExtra.classList.add('show');
 }
 
@@ -1017,6 +1033,110 @@ shareBtn.addEventListener('click', async () => {
     shareMsg.textContent = text;
   }
 });
+
+
+/* ---------------- BONUS / UNLIMITED MODE ---------------- */
+let bonusMode = false;
+let bonusIndex = null;
+
+// Pick a random case index we haven't played this session, avoiding today's daily
+function pickBonusIndex(totalCases, dailyIndex) {
+  const seenKey = `securdle_bonus_seen_${ACTIVE_MODE}`;
+  let seen;
+  try { seen = JSON.parse(sessionStorage.getItem(seenKey) || '[]'); } catch(e) { seen = []; }
+
+  // Build pool of unseen indices, excluding today's daily
+  let pool = [];
+  for (let i = 0; i < totalCases; i++) {
+    if (i !== dailyIndex && !seen.includes(i)) pool.push(i);
+  }
+  // If we've exhausted all cases, reset session seen list (keep only daily exclusion)
+  if (pool.length === 0) {
+    seen = [];
+    try { sessionStorage.setItem(seenKey, JSON.stringify(seen)); } catch(e) {}
+    for (let i = 0; i < totalCases; i++) {
+      if (i !== dailyIndex) pool.push(i);
+    }
+  }
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  seen.push(pick);
+  try { sessionStorage.setItem(seenKey, JSON.stringify(seen)); } catch(e) {}
+  return pick;
+}
+
+async function apiBonusGetCase(mode, index) {
+  const res = await fetch(`${API_BASE}/get-bonus-case?mode=${mode}&index=${index}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to load bonus case');
+  return res.json();
+}
+
+async function apiBonusGuess(mode, index, guess, guessNumber) {
+  const res = await fetch(`${API_BASE}/bonus-guess`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, index, guess, guessNumber }),
+  });
+  if (!res.ok) throw new Error('Failed to submit bonus guess');
+  return res.json();
+}
+
+async function loadBonusCase() {
+  bonusMode = true;
+  clueList.innerHTML = '';
+  banner.className = 'banner';
+  resultExtra.classList.remove('show');
+  shareMsg.textContent = '';
+  historyList.innerHTML = '';
+  guessInput.value = '';
+  guessInput.disabled = true;
+  submitBtn.disabled = true;
+  fieldMsg.textContent = 'Loading bonus case…';
+  dropdown.classList.remove('open');
+
+  if (!masterListCache[ACTIVE_MODE]) {
+    await loadMasterList(ACTIVE_MODE);
+  } else {
+    MASTER_LIST = masterListCache[ACTIVE_MODE];
+  }
+
+  let data;
+  try {
+    // First call without index to discover total; we derive daily index client-side
+    // Actually just ask for case 0 to get total, then pick properly
+    const probe = await apiBonusGetCase(ACTIVE_MODE, 0);
+    const totalCases = probe.total;
+    const dailyDayIndex = state.day; // state.day is still set from the daily
+    // Compute what daily index would be using same logic as server
+    // We don't have this precisely client-side, but sessionStorage already excludes seen ones.
+    // We'll just pass -1 meaning "no exclusion needed beyond seen list"
+    bonusIndex = pickBonusIndex(totalCases, -1);
+    data = await apiBonusGetCase(ACTIVE_MODE, bonusIndex);
+  } catch (e) {
+    fieldMsg.textContent = "Couldn't load bonus case. Please try again.";
+    bonusMode = false;
+    return;
+  }
+
+  state = {
+    day: state.day, // keep day for share text context
+    current: { clues: data.clues },
+    guessesUsed: 0,
+    maxGuesses: 5,
+    revealedCount: 1,
+    status: 'playing',
+    selectedAnswer: null,
+    guessLog: [],
+    resultAnswer: null,
+    resultExplainer: null,
+  };
+
+  guessInput.disabled = false;
+  submitBtn.disabled = false;
+  fieldMsg.textContent = '';
+  renderClues();
+}
+
+bonusBtn.addEventListener('click', loadBonusCase);
 
 /* ---------------- INIT ---------------- */
 loadMasterList(ACTIVE_MODE);
