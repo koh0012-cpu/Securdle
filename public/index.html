@@ -429,6 +429,121 @@
     .submit-btn { width: 100%; }
     .dropdown { width: 100%; }
   }
+
+  /* ---- CAUSES LIST MODAL ---- */
+  .causes-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .causes-modal-overlay.open {
+    display: flex;
+  }
+  @media (min-width: 481px) {
+    .causes-modal-overlay { align-items: center; }
+    .causes-modal { max-height: 70vh; border-radius: 14px; }
+  }
+  .causes-modal {
+    background: var(--bg-board);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px 14px 0 0;
+    width: 100%;
+    max-width: 520px;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .causes-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    flex-shrink: 0;
+  }
+  .causes-modal-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .causes-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+  }
+  .causes-modal-close:hover { color: var(--text-primary); }
+  .causes-modal-search {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .causes-modal-search input {
+    width: 100%;
+    background: var(--bg-dark);
+    border: 1.5px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-primary);
+    outline: none;
+    box-sizing: border-box;
+  }
+  .causes-modal-search input:focus { border-color: var(--accent-amber); }
+  .causes-modal-list {
+    overflow-y: auto;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+  }
+  .causes-modal-item {
+    padding: 13px 18px;
+    font-size: 14px;
+    color: var(--text-primary);
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background 0.1s;
+  }
+  .causes-modal-item:hover, .causes-modal-item:active {
+    background: rgba(232,163,61,0.12);
+    color: var(--accent-amber);
+  }
+  .causes-modal-empty {
+    padding: 20px 18px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .list-causes-btn {
+    margin-top: 8px;
+    background: transparent;
+    border: 1.5px solid var(--border-soft);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    justify-content: center;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: 0.3px;
+  }
+  .list-causes-btn:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
+  .list-causes-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -510,6 +625,7 @@
         <div class="dropdown" id="dropdown"></div>
       </div>
       <div class="field-msg" id="fieldMsg"></div>
+      <button class="list-causes-btn" id="listCausesBtn" disabled>&#9776; List of causes</button>
 
       <div class="history-list" id="historyList"></div>
 
@@ -527,6 +643,20 @@
       <p class="disclaimer">*Securdle is built for IT and security awareness practice and entertainment only, it does not constitute professional technical advice.</p>
     </div>
   </main>
+</div>
+
+<!-- CAUSES LIST MODAL -->
+<div class="causes-modal-overlay" id="causesModalOverlay">
+  <div class="causes-modal" id="causesModal">
+    <div class="causes-modal-header">
+      <span class="causes-modal-title">All Root Causes</span>
+      <button class="causes-modal-close" id="causesModalClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="causes-modal-search">
+      <input type="text" id="causesModalSearch" placeholder="Search causes..." autocomplete="off">
+    </div>
+    <div class="causes-modal-list" id="causesModalList"></div>
+  </div>
 </div>
 
 <script>
@@ -601,6 +731,12 @@ const shareBtn = document.getElementById('shareBtn');
 const bonusBtn = document.getElementById('bonusBtn');
 const shareMsg = document.getElementById('shareMsg');
 const comeBack = document.getElementById('comeBack');
+const listCausesBtn = document.getElementById('listCausesBtn');
+const causesModalOverlay = document.getElementById('causesModalOverlay');
+const causesModal = document.getElementById('causesModal');
+const causesModalClose = document.getElementById('causesModalClose');
+const causesModalSearch = document.getElementById('causesModalSearch');
+const causesModalList = document.getElementById('causesModalList');
 
 /* ---------------- HAMBURGER MENU: nav drawer + stats modal ---------------- */
 const menuBtn = document.getElementById('menuBtn');
@@ -805,6 +941,7 @@ async function loadCase() {
   guessInput.value = "";
   guessInput.disabled = true;
   submitBtn.disabled = true;
+  listCausesBtn.disabled = true;
   fieldMsg.textContent = "Loading today's case…";
   dropdown.classList.remove('open');
 
@@ -838,6 +975,7 @@ async function loadCase() {
 
   guessInput.disabled = false;
   submitBtn.disabled = false;
+  listCausesBtn.disabled = false;
   fieldMsg.textContent = "";
 
   const saved = loadProgress();
@@ -994,6 +1132,7 @@ function finishUI(won) {
 
   guessInput.disabled = true;
   submitBtn.disabled = true;
+  listCausesBtn.disabled = true;
   dropdown.classList.remove('open');
   fieldMsg.textContent = "";
 
@@ -1034,6 +1173,71 @@ shareBtn.addEventListener('click', async () => {
   }
 });
 
+
+
+/* ---------------- CAUSES LIST MODAL ---------------- */
+function renderCausesModal(filter) {
+  const q = (filter || '').trim().toLowerCase();
+  const items = q
+    ? MASTER_LIST.filter(m => m.toLowerCase().includes(q))
+    : MASTER_LIST;
+
+  if (items.length === 0) {
+    causesModalList.innerHTML = '<div class="causes-modal-empty">No matching root causes.</div>';
+    return;
+  }
+
+  causesModalList.innerHTML = '';
+  items.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'causes-modal-item';
+    div.textContent = m;
+    div.addEventListener('click', () => {
+      state.selectedAnswer = m;
+      guessInput.value = m;
+      dropdown.classList.remove('open');
+      closeCausesModal();
+    });
+    causesModalList.appendChild(div);
+  });
+}
+
+function openCausesModal() {
+  causesModalSearch.value = '';
+  renderCausesModal('');
+  causesModalOverlay.classList.add('open');
+  // slight delay so the modal animates in before focusing (avoids iOS keyboard jump)
+  setTimeout(() => causesModalSearch.focus(), 120);
+}
+
+function closeCausesModal() {
+  causesModalOverlay.classList.remove('open');
+  causesModalSearch.value = '';
+}
+
+listCausesBtn.addEventListener('click', () => {
+  if (state.status !== 'playing') return;
+  openCausesModal();
+});
+
+causesModalClose.addEventListener('click', closeCausesModal);
+
+// Clicking the dark overlay (outside the modal box) closes it
+causesModalOverlay.addEventListener('click', (e) => {
+  if (!causesModal.contains(e.target)) closeCausesModal();
+});
+
+// Live search inside the modal
+causesModalSearch.addEventListener('input', () => {
+  renderCausesModal(causesModalSearch.value);
+});
+
+// Escape key closes modal
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && causesModalOverlay.classList.contains('open')) {
+    closeCausesModal();
+  }
+});
 
 /* ---------------- BONUS / UNLIMITED MODE ---------------- */
 let bonusMode = false;
@@ -1132,6 +1336,7 @@ async function loadBonusCase() {
 
   guessInput.disabled = false;
   submitBtn.disabled = false;
+  listCausesBtn.disabled = false;
   fieldMsg.textContent = '';
   renderClues();
 }
